@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detector de Plátanos</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- TensorFlow.js & Teachable Machine Library -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+    
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        #webcam-container canvas {
+            border-radius: 0.75rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            width: 100%;
+            max-width: 300px;
+            margin: 0 auto;
+            border: 4px solid #fff;
+        }
+        .prediction-bar-container {
+            width: 100%;
+            background-color: #e2e8f0;
+            border-radius: 9999px;
+            height: 1.5rem;
+            margin-top: 0.25rem;
+            overflow: hidden;
+            box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
+        }
+        .prediction-bar {
+            height: 100%;
+            border-radius: 9999px;
+            display: flex;
+            align-items: center;
+            padding-left: 0.75rem;
+            font-size: 0.875rem;
+            font-weight: 700;
+            transition: width 0.2s ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-blue-50 min-h-screen flex flex-col">
+
+    <!-- Encabezado -->
+    <header class="bg-blue-600 text-white p-6 shadow-md border-b-4 border-yellow-400">
+        <h1 class="text-3xl font-extrabold text-center tracking-tight">🍌 Banana Checker</h1>
+        <p class="text-center mt-2 text-blue-100 font-medium">Descubre si tu plátano está listo para comer</p>
+    </header>
+
+    <!-- Contenido Principal -->
+    <main class="flex-grow flex flex-col items-center justify-center p-4">
+        
+        <div class="bg-white p-6 sm:p-8 rounded-2xl shadow-xl w-full max-w-md border-t-8 border-green-500">
+            
+            <div class="text-center mb-6">
+                <p class="text-gray-600 mb-6 font-medium">Apunta la cámara a tu plátano para conocer su estado de madurez.</p>
+                <button type="button" onclick="init()" id="start-btn" class="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-8 rounded-full shadow-lg transform transition hover:-translate-y-1 hover:shadow-xl focus:outline-none focus:ring-4 focus:ring-green-300">
+                    📸 Iniciar Cámara
+                </button>
+            </div>
+
+            <!-- Contenedor de Carga -->
+            <div id="loading" class="hidden text-center mb-6">
+                <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-blue-500 border-t-transparent mb-2"></div>
+                <p class="text-blue-600 font-semibold">Cargando modelo y conectando cámara...</p>
+            </div>
+
+            <!-- Contenedor de la Cámara -->
+            <div id="webcam-container" class="flex justify-center mb-6 bg-gray-50 rounded-xl"></div>
+            
+            <!-- Resultados de las Predicciones -->
+            <div id="label-container" class="space-y-4"></div>
+
+            <!-- Instrucciones -->
+            <div class="mt-8 p-4 bg-yellow-50 rounded-xl border border-yellow-200 shadow-sm">
+                <h3 class="font-bold text-yellow-800 mb-2 flex items-center">
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    Instrucciones
+                </h3>
+                <ul class="list-disc list-inside text-sm text-yellow-700 space-y-1.5 ml-1">
+                    <li>Haz clic en "Iniciar Cámara".</li>
+                    <li>Concede permisos de cámara si el navegador lo solicita.</li>
+                    <li>Pon el plátano frente a la cámara.</li>
+                    <li>Observa los porcentajes para saber su estado.</li>
+                </ul>
+            </div>
+
+            <!-- Nota para el Desarrollador (Para cambiar el modelo) -->
+            <div class="mt-4 p-4 bg-blue-50 rounded-xl border border-blue-200 shadow-sm">
+                <h3 class="font-bold text-blue-800 mb-1 text-sm flex items-center">
+                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+                    Para Desarrolladores
+                </h3>
+                <p class="text-xs text-blue-700 leading-relaxed">
+                    Para usar tu propio modelo, edita la constante <code>URL</code> en el código fuente (línea ~123) con el enlace de tu modelo de Teachable Machine.
+                </p>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Pie de página -->
+    <footer class="bg-green-600 text-green-50 p-4 text-center shadow-inner mt-auto">
+        <p class="text-sm font-medium">&copy; 2026 Banana Checker. Creado con Teachable Machine, Vanilla JS y Tailwind CSS.</p>
+    </footer>
+
+    <!-- Lógica de la Aplicación -->
+    <script type="text/javascript">
+        // =====================================================================
+        // 🍌 CONFIGURACIÓN DEL MODELO DE TEACHABLE MACHINE 🍌
+        // Reemplaza esta URL con el enlace de tu propio modelo entrenado.
+        // Asegúrate de que termine con "/"
+        // Ejemplo: "https://teachablemachine.withgoogle.com/models/TuIdDeModelo/"
+        // =====================================================================
+        const URL = "https://teachablemachine.withgoogle.com/models/placeholder/"; 
+        
+        // Determina si estamos usando el modelo real o el placeholder de demostración
+        const IS_PLACEHOLDER = URL.includes("placeholder");
+
+        let model, webcam, labelContainer, maxPredictions;
+
+        async function init() {
+            // Ocultar botón y mostrar carga
+            document.getElementById('start-btn').classList.add('hidden');
+            document.getElementById('loading').classList.remove('hidden');
+
+            try {
+                // 1. Cargar el modelo
+                if (!IS_PLACEHOLDER) {
+                    const modelURL = URL + "model.json";
+                    const metadataURL = URL + "metadata.json";
+                    model = await tmImage.load(modelURL, metadataURL);
+                    maxPredictions = model.getTotalClasses();
+                } else {
+                    // Si no hay modelo, simulamos 3 clases para la interfaz
+                    maxPredictions = 3;
+                }
+
+                // 2. Configurar la cámara web
+                const flip = true; // Voltear la cámara (efecto espejo)
+                webcam = new tmImage.Webcam(300, 300, flip); 
+                await webcam.setup(); // Solicitar permiso a la cámara
+                await webcam.play();
+                window.requestAnimationFrame(loop);
+
+                // 3. Actualizar la interfaz
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById("webcam-container").appendChild(webcam.canvas);
+                
+                labelContainer = document.getElementById("label-container");
+                labelContainer.innerHTML = ''; // Limpiar previo
+
+                // Nombres de clases simuladas si usamos el placeholder
+                const mockClassNames = ['🟢 Verde (No listo)', '🟡 Amarillo (Listo)', '🟤 Marrón (Pasado)'];
+
+                for (let i = 0; i < maxPredictions; i++) {
+                    const div = document.createElement("div");
+                    
+                    const labelSpan = document.createElement("span");
+                    labelSpan.className = "block text-sm font-bold text-gray-700 mb-1 tracking-wide";
+                    labelSpan.innerText = IS_PLACEHOLDER ? mockClassNames[i] : "...";
+                    
+                    const barContainer = document.createElement("div");
+                    barContainer.className = "prediction-bar-container";
+                    
+                    const bar = document.createElement("div");
+                    bar.className = "prediction-bar " + getBarColor(i);
+                    bar.style.width = "0%";
+                    bar.innerText = "0%";
+                    
+                    barContainer.appendChild(bar);
+                    div.appendChild(labelSpan);
+                    div.appendChild(barContainer);
+                    
+                    labelContainer.appendChild(div);
+                }
+            } catch (error) {
+                console.error("Error iniciando la cámara o el modelo:", error);
+                const loadingEl = document.getElementById('loading');
+                loadingEl.innerHTML = `
+                    <p class="text-red-500 font-bold mb-2">❌ Error al cargar</p>
+                    <p class="text-red-400 text-sm">Verifica la URL del modelo y los permisos de la cámara.</p>
+                `;
+            }
+        }
+
+        // Asigna colores a las barras de predicción (Verde, Amarillo, Azul)
+        function getBarColor(index) {
+            const colors = [
+                'bg-green-500 text-white', 
+                'bg-yellow-400 text-yellow-900', 
+                'bg-blue-500 text-white'
+            ];
+            return colors[index % colors.length];
+        }
+
+        // Bucle de actualización continua
+        async function loop() {
+            webcam.update(); // Actualizar el frame de la cámara
+            await predict(); // Realizar la predicción
+            window.requestAnimationFrame(loop);
+        }
+
+        // Realiza la predicción con el modelo
+        async function predict() {
+            let predictions = [];
+            
+            if (!IS_PLACEHOLDER && model) {
+                const rawPredictions = await model.predict(webcam.canvas);
+                predictions = rawPredictions.map(p => ({
+                    className: p.className,
+                    probability: p.probability
+                }));
+            } else {
+                // Generar datos simulados agradables a la vista si usamos el placeholder
+                const t = Date.now() / 1500;
+                predictions = [
+                    { className: '🟢 Verde (No listo)', probability: Math.abs(Math.sin(t)) * 0.3 },
+                    { className: '🟡 Amarillo (Listo)', probability: Math.abs(Math.cos(t)) * 0.7 + 0.1 },
+                    { className: '🟤 Marrón (Pasado)', probability: Math.abs(Math.sin(t + 2)) * 0.2 }
+                ];
+                
+                // Normalizar a 1
+                const sum = predictions.reduce((acc, p) => acc + p.probability, 0);
+                predictions.forEach(p => p.probability /= sum);
+            }
+
+            // Actualizar el DOM con los resultados
+            for (let i = 0; i < maxPredictions; i++) {
+                const prob = Math.round(predictions[i].probability * 100);
+                
+                const div = labelContainer.childNodes[i];
+                if (!div) continue;
+                
+                const labelSpan = div.childNodes[0];
+                const bar = div.childNodes[1].childNodes[0];
+                
+                // Si es el modelo real, actualizamos el nombre de la clase una vez se lee
+                if (!IS_PLACEHOLDER) {
+                    labelSpan.innerText = predictions[i].className;
+                }
+                
+                bar.style.width = prob + "%";
+                bar.innerText = prob > 5 ? prob + "%" : "";
+                
+                // Resaltar la clase con mayor probabilidad
+                if (prob > 50) {
+                    labelSpan.classList.add('text-blue-600', 'scale-105', 'transform', 'transition-transform');
+                    labelSpan.classList.remove('text-gray-700');
+                } else {
+                    labelSpan.classList.remove('text-blue-600', 'scale-105', 'transform', 'transition-transform');
+                    labelSpan.classList.add('text-gray-700');
+                }
+            }
+        }
+    </script>
+</body>
+</html>
